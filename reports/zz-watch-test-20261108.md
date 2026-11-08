@@ -1,3 +1,0 @@
-# WATCHTESTMARKER 测试报告
-
-正文。

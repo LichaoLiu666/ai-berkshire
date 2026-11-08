@@ -1,7 +1,7 @@
 {
-  "count": 2499,
-  "published": 2289,
-  "library": 1179,
+  "count": 2498,
+  "published": 2288,
+  "library": 1178,
   "drafts": 210,
   "reports": [
     {
@@ -11,19 +11,6 @@
       "group": "综合与横评",
       "series": "",
       "type": "筛选",
-      "date": "2026-11-08",
-      "date_source": "文件名",
-      "ticker": "",
-      "company": "",
-      "status": ""
-    },
-    {
-      "title": "WATCHTESTMARKER 测试报告",
-      "path": "reports/zz-watch-test-20261108.md",
-      "bucket": "专题",
-      "group": "综合与横评",
-      "series": "",
-      "type": "研究",
       "date": "2026-11-08",
       "date_source": "文件名",
       "ticker": "",
