@@ -18,7 +18,7 @@
 
 > 📖 **想读报告，用 [阅读站](https://xbtlin.github.io/ai-berkshire/)**：成品报告按公司、专题、时间整理，电脑和手机都好读，可搜索、记住阅读进度。
 >
-> 📊 全部 1172 份成品报告（不含筛选池）· 112 家公司 · 31 个专题，GitHub 上的完整目录见 [研究报告索引](reports/README.md)，更新至 2026-11-08。
+> 📊 全部 1179 份成品报告（不含筛选池）· 113 家公司 · 31 个专题，GitHub 上的完整目录见 [研究报告索引](reports/README.md)，更新至 2026-11-08。
 
 <!-- REPORTS-BANNER:END -->
 
@@ -664,18 +664,18 @@ REM 可选：安装 Codex slash prompts
 
 <!-- REPORTS-INDEX:START 由 tools/reports_index.py 自动更新，勿手改 -->
 
-**📊 [全部研究索引 →](reports/README.md)** ｜ 1172 份报告 · 112 家公司 · 31 个专题 · 更新至 2026-11-08
+**📊 [全部研究索引 →](reports/README.md)** ｜ 1179 份报告 · 113 家公司 · 31 个专题 · 更新至 2026-11-08
 
 最近更新：
 
 | 日期 | 报告 | 归属 |
 |------|------|------|
 | 2026-11-08 | [美股近30日涨幅前25名去劣筛选（2026-11-08）](reports/美股30日涨幅前25-quality-screen-20261108.md) | 综合与横评 |
-| 2026-11-04 | [现代牙科（03600.HK）研究报告](reports/现代牙科/现代牙科研究报告-20261104.md) | 现代牙科 |
-| 2026-11-04 | [京东健康投资研究：药品供应链值多少钱，服务增长有多少来自京东集团](reports/京东健康/京东健康研究报告-20261104.md) | 京东健康 |
-| 2026-11-04 | [谷歌（Alphabet）研究报告：搜索还在增长，AI 投入何时变成股东现金？](reports/Google/谷歌研究报告-20261104.md) | Google |
-| 2026-11-02 | [DeepSeek Super-agent 深度技术研究](reports/DeepSeek/DeepSeek-Super-agent-深度技术研究-20261102.md) | DeepSeek |
-| 2026-11-01 | [《持械入宋》研究报告](reports/持械入宋深度调研-20261101/持械入宋研究报告-20261101.md) | 持械入宋深度调研 |
+| 2026-11-08 | [WATCHTESTMARKER 测试报告](reports/zz-watch-test-20261108.md) | 综合与横评 |
+| 2026-11-07 | [Match Group（MTCH）投研团队最终报告：一头没有增长的现金牛](reports/Match%20Group/最终报告-投研团队-20261107.md) | Match Group |
+| 2026-11-07 | [Match Group（MTCH）投资研究：现金牛在缩水，还是在换血？](reports/Match%20Group/Match%20Group-research-20261107.md) | Match Group |
+| 2026-11-07 | [阿里巴巴投资研究：换挡期的电商现金牛与 AI 云](reports/Alibaba/阿里巴巴-research-20261107.md) | 阿里巴巴 |
+| 2026-11-07 | [阿里巴巴投研团队最终报告：利润池换挡期，现金流在负值区](reports/Alibaba/最终报告-投研团队-20261107.md) | 阿里巴巴 |
 
 <!-- REPORTS-INDEX:END -->
 

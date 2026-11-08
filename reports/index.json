@@ -1,7 +1,7 @@
 {
-  "count": 2492,
-  "published": 2282,
-  "library": 1172,
+  "count": 2499,
+  "published": 2289,
+  "library": 1179,
   "drafts": 210,
   "reports": [
     {
@@ -16,6 +16,97 @@
       "ticker": "",
       "company": "",
       "status": ""
+    },
+    {
+      "title": "WATCHTESTMARKER 测试报告",
+      "path": "reports/zz-watch-test-20261108.md",
+      "bucket": "专题",
+      "group": "综合与横评",
+      "series": "",
+      "type": "研究",
+      "date": "2026-11-08",
+      "date_source": "文件名",
+      "ticker": "",
+      "company": "",
+      "status": ""
+    },
+    {
+      "title": "机器人行业漏斗筛选：从 40 家到 3 家（2026-11-07）",
+      "path": "reports/机器人-funnel-20261107.md",
+      "bucket": "专题",
+      "group": "综合与横评",
+      "series": "",
+      "type": "筛选",
+      "date": "2026-11-07",
+      "date_source": "文件名",
+      "ticker": "",
+      "company": "",
+      "status": ""
+    },
+    {
+      "title": "Match Group（MTCH）投研团队最终报告：一头没有增长的现金牛",
+      "path": "reports/Match Group/最终报告-投研团队-20261107.md",
+      "bucket": "公司",
+      "group": "Match Group",
+      "series": "",
+      "type": "研究",
+      "date": "2026-11-07",
+      "date_source": "文件名",
+      "ticker": "MTCH",
+      "company": "Match Group",
+      "status": "current"
+    },
+    {
+      "title": "Match Group（MTCH）投资研究：现金牛在缩水，还是在换血？",
+      "path": "reports/Match Group/Match Group-research-20261107.md",
+      "bucket": "公司",
+      "group": "Match Group",
+      "series": "",
+      "type": "研究",
+      "date": "2026-11-07",
+      "date_source": "文件名",
+      "ticker": "MTCH",
+      "company": "Match Group",
+      "status": "superseded"
+    },
+    {
+      "title": "Match Group 管理层纵深研究：降本有效的骑手，骑着一匹减速的马",
+      "path": "reports/Match Group/Match Group-management-20261107.md",
+      "bucket": "公司",
+      "group": "Match Group",
+      "series": "",
+      "type": "组织管理",
+      "date": "2026-11-07",
+      "date_source": "文件名",
+      "ticker": "MTCH",
+      "company": "Match Group",
+      "status": ""
+    },
+    {
+      "title": "阿里巴巴投资研究：换挡期的电商现金牛与 AI 云",
+      "path": "reports/Alibaba/阿里巴巴-research-20261107.md",
+      "bucket": "公司",
+      "group": "阿里巴巴",
+      "series": "",
+      "type": "研究",
+      "date": "2026-11-07",
+      "date_source": "文件名",
+      "ticker": "BABA",
+      "company": "阿里巴巴",
+      "status": "superseded"
+    },
+    {
+      "title": "阿里巴巴投研团队最终报告：利润池换挡期，现金流在负值区",
+      "path": "reports/Alibaba/最终报告-投研团队-20261107.md",
+      "bucket": "公司",
+      "group": "阿里巴巴",
+      "series": "",
+      "type": "研究",
+      "date": "2026-11-07",
+      "date_source": "文件名",
+      "ticker": "BABA",
+      "company": "阿里巴巴",
+      "status": "current"
     },
     {
       "title": "现代牙科（03600.HK）研究报告",
@@ -704,7 +795,7 @@
       "date_source": "front-matter",
       "ticker": "BABA",
       "company": "阿里巴巴",
-      "status": "current"
+      "status": "superseded"
     },
     {
       "title": "阿里巴巴核验边界",
