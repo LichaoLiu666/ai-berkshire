@@ -1,0 +1,1 @@
+python tools/build_site.py --local --serve

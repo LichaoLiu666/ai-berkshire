@@ -3,7 +3,14 @@
 ## 项目概述
 
 基于 Claude Code 的价值投资研究 Skill 合集。四大师框架：巴菲特、芒格、段永平、李录。
-GitHub: xbtlin/ai-berkshire
+GitHub: LichaoLiu666/ai-berkshire
+
+## 市场范围（重点：美股）
+
+- **默认研究范围为美股**（NYSE / NASDAQ / NYSE American 上市公司，含中概股 ADR）
+- 行业扫描、漏斗筛选、选股池、ETF 建议默认只覆盖美股；A股/港股/台股/其他市场仅在用户明确要求时纳入，或作为竞争对手/产业链参照列出（标注"非美股，仅参照"）
+- 美股数据优先级：SEC EDGAR（10-K/10-Q/8-K/20-F）> 公司 IR > macrotrends + stockanalysis 交叉验证
+- 估值、市值默认以**美元**计价；ADR 须注明存托比率
 
 ## 项目结构
 
@@ -87,7 +94,7 @@ reports/{公司名}/
 ## GitHub 操作
 
 - 本地克隆路径：`~/ai-berkshire/`
-- 远程仓库：`https://github.com/xbtlin/ai-berkshire.git`
+- 远程仓库：`git@github.com:LichaoLiu666/ai-berkshire.git`
 - 推送前先 `git pull --rebase origin main`（远程经常有新提交）
 - commit message 用中文，描述清楚改了什么
 - 不要推送中间过程文件（如 data_collection.md），只推最终报告

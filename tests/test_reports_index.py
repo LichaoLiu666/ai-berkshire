@@ -98,6 +98,27 @@ class ReportsIndexTest(unittest.TestCase):
         self.assertEqual(self.items()[0]["date"], "2026-09-30")
         self.assertEqual(self.items()[0]["date_source"], "git")
 
+    def test_batch_report_maps_to_company_and_newest_full_report_is_current(self):
+        self.write("reports/茅台/茅台研究报告-20260101.md", "# 旧版\n")
+        self.write("reports/茅台/茅台研究报告-20260601.md", "# 新版\n")
+        self.write("reports/美股七姐妹-20261019/苹果/苹果研究报告-20261019.md", "# 苹果\n")
+        self.git("add", ".")
+        self.run_index()
+        items = {i["path"]: i for i in self.items()}
+        self.assertEqual(items["reports/茅台/茅台研究报告-20260601.md"]["status"], "current")
+        self.assertEqual(items["reports/茅台/茅台研究报告-20260101.md"]["status"], "superseded")
+        batch = items["reports/美股七姐妹-20261019/苹果/苹果研究报告-20261019.md"]
+        self.assertEqual((batch["company"], batch["ticker"]), ("苹果", "AAPL"))
+
+    def test_front_matter_status_overrides_default(self):
+        self.write("reports/茅台/茅台研究报告-20260101.md", "---\nstatus: current\n---\n# 旧版\n")
+        self.write("reports/茅台/茅台研究报告-20260601.md", "# 新版\n")
+        self.git("add", ".")
+        self.run_index()
+        items = {i["path"]: i for i in self.items()}
+        self.assertEqual(items["reports/茅台/茅台研究报告-20260101.md"]["status"], "current")
+        self.assertEqual(items["reports/茅台/茅台研究报告-20260601.md"]["status"], "superseded")
+
 
 if __name__ == "__main__":
     unittest.main()

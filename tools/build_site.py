@@ -4,7 +4,10 @@
 输入：reports/index.json（由 tools/reports_index.py 生成）、投资炼丹/、实盘记录/ 下已纳入 Git 的 Markdown。
 输出：site/ 目录，纯 HTML，无框架；按公司、专题、时间、类型、公众号发表五个维度建索引，另有站内搜索与 RSS。
 
-用法：python3 tools/build_site.py [--out site]
+用法：python3 tools/build_site.py [--out site]            # 公开站点，只含已入库内容
+      python3 tools/build_site.py --local --serve         # 本地站点：默认只收美股（--all-markets 收全部），含未提交报告、评分与结论摘录，无统计脚本，
+                                                          # 输出到 site-local/，只监听 127.0.0.1；
+                                                          # --serve 时自动监听报告变化并重建（--no-watch 关闭）
 依赖：markdown、pypinyin（pip install markdown pypinyin）
 """
 import argparse
@@ -16,8 +19,11 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import threading
+import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import quote
 
 import markdown
@@ -38,6 +44,10 @@ DATE8 = re.compile(r"(20[2-3]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])")
 ASSET_EXT = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".pdf", ".csv", ".json", ".txt", ".html"}
 TYPE_ORDER = ["深度系列", "研究", "财报", "估值仓位", "组织管理", "横评对比", "公众号", "筛选", "底稿"]
 NOISE_BUCKETS = {"筛选池"}
+US_ONLY = False  # 只收美股；本地站点默认开启，公开站点不启用
+LOCAL = False  # --local 时为 True：收录未提交报告、展示评分摘录、不加载任何统计脚本
+STATUS_LABEL = {"current": "当前版本", "superseded": "已有新版"}
+REVIEW_TYPES = {"研究", "深度系列", "财报", "估值仓位", "组织管理", "横评对比"}
 
 
 def sh(args):
@@ -97,13 +107,18 @@ def available(path):
 
 def collect():
     items = []
-    idx = json.load(open(os.path.join(ROOT, "reports", "index.json"), encoding="utf-8"))
-    for r in idx["reports"]:
+    if LOCAL:
+        import reports_index
+        rows = reports_index.collect(reports_index.load_config(), reports_index.git_dates(), include_untracked=True)[0]
+    else:
+        rows = json.load(open(os.path.join(ROOT, "reports", "index.json"), encoding="utf-8"))["reports"]
+    for r in rows:
         if not available(r["path"]):
             continue
         items.append({
             "title": r["title"], "path": r["path"], "bucket": r["bucket"], "group": r["group"],
             "series": r.get("series", ""), "type": r.get("type", "研究"), "date": r.get("date", ""),
+            "company": r.get("company", ""), "ticker": r.get("ticker", ""), "status": r.get("status", ""),
         })
     seen = {i["path"] for i in items}
     dir_meta = {}
@@ -181,6 +196,25 @@ def collect():
     return items
 
 
+def filter_us(items):
+    """只保留美股报告：归属公司为美股代码，或在 config.json 的 us_market 白名单里。"""
+    with open(os.path.join(ROOT, "reports", "_index", "config.json"), encoding="utf-8") as f:
+        cfg = json.load(f)
+    aliases = dict(cfg["aliases"], **cfg.get("company_aliases", {}))
+    allow = cfg["us_market"]
+
+    def is_us(it):
+        if it["path"] in allow["paths"] or it["group"] in allow["groups"]:
+            return True
+        name = it.get("company") or aliases.get(it["group"], it["group"])
+        ticker = it.get("ticker") or cfg["tickers"].get(name, "")
+        return bool(re.fullmatch(r"[A-Z]{1,5}", ticker))
+
+    kept = [it for it in items if is_us(it)]
+    print("美股过滤：保留 %d 篇，滤掉 %d 篇" % (len(kept), len(items) - len(kept)))
+    return kept
+
+
 # ---------- 内容筛选：只上成品，不上中间产物 ----------
 # 中间产物（审计、核验、证据、底稿、数据收集、搜索日志、自动扫描、召回池分视角稿等）仍保留在 GitHub，
 # 阅读站点只收录成品报告。被排除的页面若被正文引用，链接自动指向 GitHub 原文。
@@ -246,7 +280,7 @@ def curate(items):
                 drafts.add(it["source_report"])
             m = re.search(r"原稿：\[[^\]]*\]\(([^)]+)\)", read(it["path"]))
             if m:
-                drafts.add(os.path.normpath(os.path.join(os.path.dirname(it["path"]), m.group(1))))
+                drafts.add(os.path.normpath(os.path.join(os.path.dirname(it["path"]), m.group(1))).replace("\\", "/"))
     kept, dropped, hidden = [], defaultdict(int), []
     for it in items:
         it["_size"] = len(read(it["path"]).encode("utf-8"))
@@ -478,14 +512,14 @@ var box=document.getElementById('recent-read');if(box){var arr=Object.keys(d).ma
 });})();
 """
 
-NAV = [("index.html", "首页"), ("companies/index.html", "公司"), ("topics/index.html", "专题"),
+NAV = [("index.html", "首页"), ("companies/index.html", "公司"), ("coverage.html", "覆盖表"), ("topics/index.html", "专题"),
        ("dates/index.html", "时间"), ("types/index.html", "类型"), ("wechat/index.html", "公众号"),
        ("search.html", "搜索"), ("about.html", "关于")]
 
 
 def analytics_tag():
     """统计脚本：本机打开任意页面网址加 #notrack 后不再加载任何统计脚本，#track 恢复。"""
-    if not (GOATCOUNTER or BAIDU_TONGJI):
+    if LOCAL or not (GOATCOUNTER or BAIDU_TONGJI):
         return ""
     loads = []
     if BAIDU_TONGJI:
@@ -532,7 +566,7 @@ def li(it, depth, show_group=True):
     if it["type"]:
         bits.append(it["type"])
     if it.get("status"):
-        bits.append(it["status"])
+        bits.append(STATUS_LABEL.get(it["status"], it["status"]))
     return '<li><a href="%s%s">%s</a><div class="meta">%s</div></li>' % (
         rel, it["url"], html.escape(it["title"]), " · ".join(html.escape(b) for b in bits))
 
@@ -589,6 +623,77 @@ def convert(it, by_path, out_dir):
     return body, toc
 
 
+# ---------- 覆盖表 ----------
+
+SCORE = re.compile(r"综合评分[^0-9★\n]{0,8}(★+|\d(?:\.\d+)?\s*/\s*5)")
+# 裸“结论：”常是某个数字核对的小结，只有加粗时才算全文结论
+CONCLUSION = re.compile(r"^[>\s#-]*(?:\*{0,2}(?:研究结论|投资结论|最终结论|核心结论)|\*\*(?:结论|判断))\**\s*[:：]\**\s*(.+)")
+BUY_LINE = re.compile(r"买入区间|买入价|分批买入|以下分批|以下买入")
+
+
+def freshness(day):
+    if not day:
+        return "无日期", 9999
+    age = (date.today() - datetime.strptime(day, "%Y-%m-%d").date()).days
+    return ("较新" if age <= 90 else "待复核" if age <= 180 else "过期"), age
+
+
+def clip(text, n=110):
+    text = re.sub(r"^[>#\s-]+", "", re.sub(r"[*`|]", "", text)).strip()
+    return text if len(text) <= n else text[:n] + "…"
+
+
+def excerpt(report):
+    """从当前报告自动摘录评分与结论，只在本地站点显示；格式不统一，一律以原文为准。"""
+    text = FRONT.sub("", read(report["path"]))
+    m = SCORE.search(text)
+    score = re.sub(r"\s", "", m.group(1)) if m else ""
+    lines = text.splitlines()
+    found = next((c.group(1) for c in map(CONCLUSION.match, lines) if c), "")
+    if not found and re.search("[:：]", report["title"]):
+        found = re.split("[:：]", report["title"], maxsplit=1)[1]
+    buy = next((l for l in lines if BUY_LINE.search(l) and re.search(r"\d", l) and len(l) < 160 and not l.lstrip().startswith("|")), "")
+    return score, clip(found), clip(buy, 80)
+
+
+def coverage_page(companies, current, comp_url, last_reviewed):
+    rows = []
+    for name, reports in companies.items():
+        if name == "综合":  # 公众号文章的归档分组，不是公司
+            continue
+        cur = current.get(name)
+        day = last_reviewed(reports)
+        label, age = freshness(day)
+        ticker = next((r["ticker"] for r in reports if r.get("ticker")), "")
+        link = '<a href="%s">%s</a>' % (cur["url"], html.escape(cur["title"])) if cur else "—"
+        cells = ['<a href="%s">%s</a>' % (comp_url[name], html.escape(name)), html.escape(ticker) or "—", day or "—",
+                 str(age) if day else "—", label, str(len(reports)), link]
+        if LOCAL:
+            score, found, buy = excerpt(cur) if cur else ("", "", "")
+            cells += [score or "—", html.escape(found) or "—", html.escape(buy) or "—"]
+        rows.append((age if day else -1, label, "<tr data-s=\"%s\">%s</tr>" % (label, "".join("<td>%s</td>" % c for c in cells))))
+    rows.sort(key=lambda r: r[0])
+    heads = ["公司", "代码", "最近研究", "距今（天）", "状态", "报告数", "当前报告"] + (["评分", "结论摘录", "买入价摘录"] if LOCAL else [])
+    counts = defaultdict(int)
+    for _, label, _row in rows:
+        counts[label] += 1
+    note = "超过 90 天为待复核，超过 180 天为过期。点表头排序。"
+    if LOCAL:
+        note += "评分与摘录由脚本从当前报告抽取，格式不统一，可能缺失或抓错，一律以原文为准。"
+    options = "".join('<option value="%s">%s（%d）</option>' % (k, k, counts[k]) for k in ("较新", "待复核", "过期", "无日期") if counts[k])
+    return ('<h1>研究覆盖表</h1><div class="meta">%d 家公司。%s</div>'
+            '<p><input class="q" id="f" type="search" placeholder="筛选公司、代码或结论"></p>'
+            '<p><select id="s"><option value="">全部状态</option>%s</select></p>'
+            '<div class="table-wrap"><table id="t"><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>'
+            "<script>(function(){var t=document.getElementById('t'),b=t.tBodies[0],f=document.getElementById('f'),s=document.getElementById('s');"
+            "function run(){var q=f.value.trim().toLowerCase(),v=s.value;[].forEach.call(b.rows,function(r){"
+            "r.style.display=(r.textContent.toLowerCase().indexOf(q)>=0&&(!v||r.getAttribute('data-s')===v))?'':'none'})}"
+            "f.oninput=run;s.onchange=run;[].forEach.call(t.tHead.rows[0].cells,function(h,i){h.style.cursor='pointer';var d=1;h.onclick=function(){"
+            "d=-d;var a=[].slice.call(b.rows);a.sort(function(x,y){var p=x.cells[i].textContent,q=y.cells[i].textContent,m=parseFloat(p),n=parseFloat(q);"
+            "return d*((!isNaN(m)&&!isNaN(n))?m-n:p.localeCompare(q,'zh'))});a.forEach(function(r){b.appendChild(r)})}})})();</script>"
+            ) % (len(rows), note, options, "".join("<th>%s</th>" % h for h in heads), "".join(r[2] for r in rows))
+
+
 # ---------- 各类页面 ----------
 
 def write(out_dir, rel_path, content):
@@ -599,7 +704,10 @@ def write(out_dir, rel_path, content):
 
 
 def build(out_dir):
-    items = curate(collect())
+    items = collect()
+    if US_ONLY:
+        items = filter_us(items)
+    items = curate(items)
     by_path = {i["path"]: i for i in items}
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
@@ -630,26 +738,14 @@ def build(out_dir):
         types[it["type"]].append(it)
 
     # 专题目录里写单家公司的报告（如七姐妹逐家报告），同时挂到对应公司页
-    alias = {"谷歌": "Google", "Alphabet": "Google", "特斯拉": "Tesla", "Amazon": "亚马逊", "微软": "微软", "苹果": "苹果", "贵州茅台": "茅台"}
-    names = sorted(set(companies) | set(alias), key=len, reverse=True)
     for it in items:
-        if it["bucket"] not in ("专题",):
-            continue
-        t = it["title"].strip()
-        hit = None
-        for n in names:
-            if re.match(re.escape(n) + r"(（|\(|：|:|\s)", t):
-                hit = alias.get(n, n)
-                break
-        if not hit:
-            m = re.match(r"^([^（(：:\s]{1,12})（([A-Z0-9]{1,6}(\.[A-Z]{1,2})?)）", t)
-            if m:
-                hit = alias.get(m.group(1), m.group(1))
-        if hit and it not in companies[hit]:
+        hit = it.get("company")
+        if it["bucket"] == "专题" and hit and it not in companies[hit]:
             companies[hit].append(it)
             it["_also"] = hit
     for c in companies:
         companies[c].sort(key=lambda x: x["date"] or "", reverse=True)
+    current = {c: next((r for r in rows if r.get("status") == "current"), None) for c, rows in companies.items()}
 
     # 专题显示名：优先用目录 README 的标题
     tname = {}
@@ -685,9 +781,13 @@ def build(out_dir):
         body, toc = convert(it, by_path, out_dir)
         same = [x for x in (companies.get(it["group"]) or topics.get(it["group"]) or screens.get(it["group"]) or [])
                 if x["id"] != it["id"]][:12]
-        meta = " · ".join(x for x in [it["date"], it["type"], it.get("status", "")] if x)
+        meta = " · ".join(x for x in [it["date"], it["type"], STATUS_LABEL.get(it.get("status", ""), it.get("status", ""))] if x)
         head = "<h1>%s</h1><div class=\"meta\">%s ｜ %s ｜ <a href=\"%s/blob/main/%s\">GitHub 原文</a></div>" % (
             html.escape(it["title"]), group_link(it, 1), html.escape(meta), REPO_URL, quote(it["path"]))
+        newer = current.get(it.get("company")) if it.get("status") == "superseded" else None
+        if newer:
+            head += '<div class="intro"><p>这不是最新版本。当前版本：<a href="../%s">%s</a>（%s）</p></div>' % (
+                newer["url"], html.escape(newer["title"]), newer["date"] or "日期不详")
         if toc:
             head += '<details class="toc"><summary>目录</summary>%s</details>' % toc
         tail = ""
@@ -713,17 +813,29 @@ def build(out_dir):
         write(out_dir, it["url"], shell(it["title"], page, 1, crumb, main_class="doc", progress=True, page=it["url"]))
 
     # 公司索引与公司页
+    def last_reviewed(rows):
+        return max((r["date"] for r in rows if r["date"] and r["type"] in REVIEW_TYPES), default="")
+
     def company_page(name, rows):
         groups = defaultdict(list)
         for r in rows:
             key = ("公众号定稿" if r.get("status") == "待发布" else "公众号发表") if r["bucket"] == "公众号发表" else r["type"]
             groups[key].append(r)
         order = ["导读", "公众号定稿", "公众号发表"] + TYPE_ORDER
-        parts = ["<h1>%s</h1><div class=\"meta\">共 %d 篇，最近更新 %s</div>" % (
-            html.escape(name), len(rows), rows[0]["date"] if rows and rows[0]["date"] else "—")]
-        for k in order + [k for k in groups if k not in order]:
-            if k in groups:
-                parts.append("<h2>%s（%d）</h2>%s" % (html.escape(k), len(groups[k]), ul(groups[k], 2, show_group=False)))
+        ticker = next((r["ticker"] for r in rows if r.get("ticker")), "")
+        parts = ["<h1>%s</h1><div class=\"meta\">%s共 %d 篇，最近研究 %s</div>" % (
+            html.escape(name), html.escape(ticker) + " · " if ticker else "", len(rows), last_reviewed(rows) or "—")]
+        key_rows = [("当前研究报告", current.get(name)),
+                    ("投资论文", next((r for r in rows if r["path"].endswith("-thesis.md")), None)),
+                    ("最新财报", next((r for r in rows if r["type"] == "财报"), None))]
+        cards = [(label, r) for label, r in key_rows if r]
+        if cards:
+            parts.append('<h2>先读这些</h2><ul class="list">%s</ul>' % "".join(
+                '<li><a href="../../%s">%s</a><div class="meta">%s · %s</div></li>' % (
+                    r["url"], html.escape(r["title"]), label, r["date"] or "日期不详") for label, r in cards))
+        history = "".join("<h3>%s（%d）</h3>%s" % (html.escape(k), len(groups[k]), ul(groups[k], 2, show_group=False))
+                          for k in order + [k for k in groups if k not in order] if k in groups)
+        parts.append("<details><summary>全部历史报告（%d）</summary>%s</details>" % (len(rows), history))
         return "".join(parts)
 
     for c, rows in companies.items():
@@ -743,6 +855,9 @@ def build(out_dir):
             '<li><a href="../%s">%s</a><div class="meta">%d 篇 · 最近 %s</div></li>' % (
                 comp_url[c], html.escape(c), len(companies[c]), companies[c][0]["date"] or "—") for c in names))
     write(out_dir, "companies/index.html", shell("按公司", body, 1, section="公司"))
+
+    write(out_dir, "coverage.html", shell("覆盖表", coverage_page(companies, current, comp_url, last_reviewed), 0,
+                                          section="覆盖表", main_class="wide"))
 
     # 专题
     def simple_group_page(name, rows, depth, crumb):
@@ -903,8 +1018,97 @@ def build(out_dir):
     print("生成 %d 篇报告页，%d 家公司，%d 个专题，%d 个月份 -> %s" % (len(items), len(companies), len(topics) + len(screens), len(months), out_dir))
 
 
+# ---------- 本地站点：监听报告变化并自动重建 ----------
+
+WATCH_DIRS = ("reports", "投资炼丹", "实盘记录")
+# 这些文件由索引脚本生成，内容变化不代表有新报告
+WATCH_IGNORE = {"reports/README.md"}
+
+
+def watch_signature():
+    """返回所有被监听 Markdown 与索引配置的 (路径, 修改时间, 大小) 集合。"""
+    sig = set()
+    for top in WATCH_DIRS:
+        for base, dirs, files in os.walk(os.path.join(ROOT, top)):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for name in files:
+                full = os.path.join(base, name)
+                rel = os.path.relpath(full, ROOT).replace(os.sep, "/")
+                if rel in WATCH_IGNORE or not (name.endswith(".md") or rel == "reports/_index/config.json"):
+                    continue
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue  # 扫描途中被删除或改名
+                sig.add((rel, st.st_mtime_ns, st.st_size))
+    return sig
+
+
+def rebuild_in_place(out_dir):
+    """先构建到临时目录，成功后再整体替换，构建期间站点仍可访问；失败时保留旧站点。"""
+    work = tempfile.mkdtemp(prefix="ai-berkshire-site-")
+    fresh, stale = os.path.join(work, "fresh"), os.path.join(work, "stale")
+    try:
+        build(fresh)
+        # Windows 上目录内有文件正被读取时改名会失败，短暂重试
+        for attempt in range(10):
+            try:
+                os.rename(out_dir, stale)
+                break
+            except OSError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.5)
+        try:
+            shutil.move(fresh, out_dir)
+        except Exception:
+            os.rename(stale, out_dir)
+            raise
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def watch_and_rebuild(out_dir, interval):
+    """轮询文件变化；连续两次扫描结果一致才重建，避免读到写了一半的报告。"""
+    built = watch_signature()
+    previous = built
+    while True:
+        time.sleep(interval)
+        try:
+            current = watch_signature()
+            if current != built and current == previous:
+                print("检测到报告变化，正在重建站点……", flush=True)
+                rebuild_in_place(out_dir)
+                built = current
+                print("站点已更新，刷新浏览器即可查看", flush=True)
+            previous = current
+        except Exception as exc:  # 单次失败不能让监听停掉，下一轮会重试
+            print("站点重建失败，继续使用旧版本：%r" % exc, flush=True)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=os.path.join(ROOT, "site"))
+    ap.add_argument("--out", default="")
+    ap.add_argument("--local", action="store_true", help="本地站点：含未提交报告与评分摘录，不加载统计脚本")
+    ap.add_argument("--all-markets", action="store_true", help="本地站点也收录非美股报告")
+    ap.add_argument("--serve", action="store_true", help="构建后在 127.0.0.1 上启动本地服务")
+    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--no-watch", action="store_true", help="--serve 时不监听报告变化")
+    ap.add_argument("--watch-interval", type=float, default=5.0, help="检查报告变化的间隔（秒）")
     args = ap.parse_args()
-    build(args.out)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    LOCAL = args.local
+    US_ONLY = LOCAL and not args.all_markets
+    if LOCAL:
+        SITE_NAME += "（本地·美股）" if US_ONLY else "（本地）"
+    out = args.out or os.path.join(ROOT, "site-local" if LOCAL else "site")
+    build(out)
+    if args.serve:
+        from functools import partial
+        from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+        if not args.no_watch:
+            threading.Thread(target=watch_and_rebuild, args=(out, args.watch_interval), daemon=True).start()
+        handler = partial(SimpleHTTPRequestHandler, directory=out)
+        print("本地站点：http://127.0.0.1:%d/ （Ctrl+C 停止）" % args.port, flush=True)
+        ThreadingHTTPServer(("127.0.0.1", args.port), handler).serve_forever()

@@ -167,8 +167,79 @@ def bucket_of(top, cfg):
     return "公司", top
 
 
-def collect(cfg, gitmap):
+def company_names(cfg, items):
+    """规范公司名表：别名 -> 规范名。"""
+    names = {g: g for g in cfg.get("companies", [])}
+    names.update({i["group"]: i["group"] for i in items if i["bucket"] == "公司"})
+    for src in (cfg["aliases"], cfg.get("company_aliases", {})):
+        for alias, canon in src.items():
+            if canon in names:
+                names[alias] = canon
+    return names
+
+
+def company_of(item, names, meta_company):
+    """报告归属公司：front-matter > 公司目录 > 专题批次里的公司子目录 > 标题开头的公司名。"""
+    if meta_company:
+        return names.get(meta_company, meta_company)
+    if item["bucket"] == "公司":
+        return item["group"]
+    if item["bucket"] != "专题":
+        return ""
+    for part in item["path"].split("/")[2:-1]:
+        if display_name(part) in names:
+            return names[display_name(part)]
+    title = item["title"].strip()
+    for name in sorted(names, key=len, reverse=True):
+        if re.match(re.escape(name) + r"(（|\(|：|:|\s)", title):
+            return names[name]
+    return ""
+
+
+FULL_REPORT = re.compile(r"研究报告|最终报告|投资研究|-research-|investment-research", re.I)
+STATUSES = ("current", "superseded")
+
+
+def mark_status(items):
+    """每家公司选出当前版完整报告，其余完整报告标为已被替代。front-matter 的 status 优先。"""
+    by_company = defaultdict(list)
+    for it in items:
+        if it["company"] and it["type"] in ("研究", "深度系列") and "视角" not in it["path"]:
+            by_company[it["company"]].append(it)
+
+    def rank(it):
+        name = os.path.basename(it["path"])
+        try:
+            size = os.path.getsize(os.path.join(ROOT, it["path"]))
+        except OSError:
+            size = 0
+        # git 日期只是提交时间，不代表研究时间，同等条件下排后面
+        return (it["date_source"] != "git", it["date"], "最终报告" in name, size, it["path"])
+
+    for rows in by_company.values():
+        full = [r for r in rows if FULL_REPORT.search(os.path.basename(r["path"]) + " " + r["title"])]
+        if not any(r["status"] == "current" for r in rows):
+            max(full or rows, key=rank)["status"] = "current"
+        for r in full:
+            if not r["status"]:
+                r["status"] = "superseded"
+
+
+def annotate(items, cfg, metas):
+    names = company_names(cfg, items)
+    for it in items:
+        meta = metas[it["path"]]
+        it["company"] = company_of(it, names, meta.get("company", ""))
+        it["ticker"] = meta.get("ticker") or cfg["tickers"].get(it["company"] or it["group"], "")
+        status = meta.get("status", "").lower()
+        it["status"] = status if status in STATUSES else ""
+    mark_status(items)
+
+
+def collect(cfg, gitmap, include_untracked=False):
+    """include_untracked 只供本地站点使用；公开索引必须保持 False。"""
     items = []
+    metas = {}
     unknown_dirs = set()
     tracked = git_report_paths()
     excluded = []
@@ -181,7 +252,7 @@ def collect(cfg, gitmap):
                 continue
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, ROOT).replace(os.sep, "/")
-            if rel not in tracked:
+            if rel not in tracked and not include_untracked:
                 excluded.append(rel)
                 continue
             relr = os.path.relpath(full, REPORTS).replace(os.sep, "/")
@@ -210,6 +281,7 @@ def collect(cfg, gitmap):
             date, dsrc = guess_date(meta, fn, parts[-2] if len(parts) > 1 else "", head, gitmap, rel)
             series = parts[1] if len(parts) > 2 else ""
             rtype = meta.get("type") or ("底稿" if is_draft(relr, cfg) else guess_type(fn, relr))
+            metas[rel] = meta
             items.append(OrderedDict([
                 ("title", title),
                 ("path", rel),
@@ -222,6 +294,7 @@ def collect(cfg, gitmap):
                 ("ticker", cfg["tickers"].get(group, "")),
             ]))
     items.sort(key=lambda x: (x["date"], x["path"]), reverse=True)
+    annotate(items, cfg, metas)
     return items, sorted(unknown_dirs), sorted(excluded)
 
 
@@ -262,8 +335,9 @@ def render(items, cfg):
     L.append("> 新增报告先 `git add`，再运行 `python3 tools/reports_index.py`，将报告与索引一并提交。")
     L.append("> 只收录成品报告；证据、审计、复算、底稿等中间产物不在此列，完整清单见 `index.json`。")
     L.append("")
-    L.append("**%d 份报告** · **%d 家公司** · **%d 个专题** · 最近更新 %s" % (
-        len(items), len(by_bucket["公司"]), len(by_bucket["专题"]), latest or "—"))
+    n_screen = sum(len(v) for v in by_bucket.get("筛选池", {}).values())
+    L.append("**%d 份报告** · **%d 家公司** · **%d 个专题** · 另有 %d 份筛选池产物 · 最近更新 %s" % (
+        len(items) - n_screen, len(by_bucket["公司"]), len(by_bucket["专题"]), n_screen, latest or "—"))
     L.append("")
     L.append("[最近更新](#最近更新) · [按公司](#按公司) · [专题研究](#专题研究) · "
              "[大师研究](#大师研究) · [筛选池](#筛选池)")
@@ -363,7 +437,8 @@ def index_stats(items):
         if it["bucket"] != "筛选池":
             groups[it["bucket"]].add(it["group"])
     latest = max((i["date"] for i in items if i["date"]), default="—")
-    return len(items), len(groups["公司"]), len(groups["专题"]), latest
+    library = sum(1 for i in items if i["bucket"] != "筛选池")
+    return library, len(groups["公司"]), len(groups["专题"]), latest
 
 
 def root_banner_block(items):
@@ -375,7 +450,7 @@ def root_banner_block(items):
         "> 📖 **想读报告，用 [阅读站](https://xbtlin.github.io/ai-berkshire/)**：成品报告按公司、专题、时间整理，"
         "电脑和手机都好读，可搜索、记住阅读进度。",
         ">",
-        "> 📊 全部 %d 份报告（含底稿）· %d 家公司 · %d 个专题，GitHub 上的完整目录见 [研究报告索引](reports/README.md)，更新至 %s。"
+        "> 📊 全部 %d 份成品报告（不含筛选池）· %d 家公司 · %d 个专题，GitHub 上的完整目录见 [研究报告索引](reports/README.md)，更新至 %s。"
         % (total, companies, themes, latest),
         "",
         BANNER_END,
@@ -442,6 +517,7 @@ def main():
     readme_path = os.path.join(REPORTS, "README.md")
     payload = json.dumps(
         {"count": len(items), "published": len(published(items)),
+         "library": sum(1 for i in published(items) if i["bucket"] != "筛选池"),
          "drafts": len(items) - len(published(items)), "reports": items},
         ensure_ascii=False, indent=2) + "\n"
     readme = render(items, cfg)

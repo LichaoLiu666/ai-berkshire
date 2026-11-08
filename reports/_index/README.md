@@ -90,6 +90,29 @@ type: 财报
 新研究目录的约定：**正式报告放目录第一层或公司子目录里，证据、日志、脚本、复算结果放
 `evidence/` 或 `证据/` 子目录**，这样不用登记就会自动区分。
 
+## 公司归属、当前版本与覆盖表
+
+`index.json` 每条记录带 `company`、`ticker`、`status`：
+
+- `company`：公司目录直接归属；专题批次里的报告按公司子目录或标题开头的公司名归属。
+  别名写在 `config.json` 的 `company_aliases`，代码写在 `tickers`。个别报告可用 front-matter 的 `company:` 覆盖。
+- `status`：每家公司最新的完整报告默认为 `current`，较早的完整报告为 `superseded`，其余报告留空。
+  默认选错时，在想要的报告 front-matter 写 `status: current`。
+
+阅读站的公司页置顶当前报告、投资论文和最新财报，`coverage.html` 是全部公司的覆盖表。
+
+## 本地站点
+
+```bash
+pip install markdown pypinyin
+python tools/build_site.py --local --serve   # http://127.0.0.1:8000/
+```
+
+本地站点输出到 `site-local/`（已被 Git 忽略），收录未提交的报告，覆盖表多出评分和结论摘录，且不加载统计脚本。
+本地站点默认只收美股（NYSE/NASDAQ/NYSE American，含 ADR），规则在 `config.json` 的 `us_market`；要看全部市场时加 `--all-markets`。
+
+`tools/deploy_site.sh` 不带 `--local`，公开站点不受影响。
+
 ## 隐私
 
 脚本通过 Git 暂存区路径清单限制公开索引的范围。未加入 Git 的本地文件
